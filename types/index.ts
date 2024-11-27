@@ -34,12 +34,14 @@ export interface TournamentPlayer {
 export interface Match {
   id: string;
   tournament_id: string;
-  home_player_id: string;
-  away_player_id: string;
+  home_team_id: string;
+  away_team_id: string;
   home_score: number | null;
   away_score: number | null;
+  status: 'scheduled' | 'completed' | 'cancelled';
   match_date: string;
-  status: 'scheduled' | 'in_progress' | 'completed';
+  home_team: Team;
+  away_team: Team;
   created_at: string;
   updated_at: string;
 }

@@ -17,8 +17,9 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table"; // Import Table components
 import { TeamRandomizer } from "@/components/tournaments/team-randomizer";
-import { Trophy, Users2, Calendar, Table } from "lucide-react";
+import { Trophy, Users2, Calendar, TableIcon, ActivityIcon } from "lucide-react";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -82,20 +83,23 @@ interface Match {
   away_score: number;
   match_date: string;
   status: "scheduled" | "in_progress" | "completed" | "cancelled";
+  updated_at: string;
 }
 
 interface Standing {
   id: string;
   tournament_id: string;
   team_id: string;
-  team: Team;
   played: number;
   wins: number;
   draws: number;
   losses: number;
   goals_for: number;
   goals_against: number;
+  goal_difference: number;
   points: number;
+  team: Team;
+  player: Player;
 }
 
 const TournamentDetailPage: NextPage = () => {
@@ -229,17 +233,41 @@ const TournamentDetailPage: NextPage = () => {
       setMatches(matchesData);
 
       // Load standings
-      const { data: standingsData, error: standingsError } = await supabase
-        .from("standings")
-        .select(`
-          *,
-          team:teams(*)
-        `)
-        .eq("tournament_id", id)
-        .order("points", { ascending: false });
+      const fetchStandings = async () => {
+        try {
+          // Get standings with team data and tournament players
+          const { data: standingsData, error: standingsError } = await supabase
+            .from("standings")
+            .select(`
+              *,
+              team:teams(
+                *,
+                tournament_players!inner(
+                  player:players(*)
+                )
+              )
+            `)
+            .eq("tournament_id", id)
+            .order("points", { ascending: false });
 
-      if (standingsError) throw standingsError;
-      setStandings(standingsData);
+          if (standingsError) throw standingsError;
+
+          // Transform the data to match our interface
+          const transformedStandings = standingsData
+            .filter(standing => standing.team && standing.team.tournament_players?.length > 0)
+            .map((standing) => ({
+              ...standing,
+              player: standing.team.tournament_players[0].player
+            }));
+
+          setStandings(transformedStandings);
+        } catch (error) {
+          toast.error("Error fetching standings");
+          console.error(error);
+        }
+      };
+
+      fetchStandings();
 
     } catch (error) {
       console.error("Error loading tournament data:", error);
@@ -479,7 +507,7 @@ const TournamentDetailPage: NextPage = () => {
               Matches
             </TabsTrigger>
             <TabsTrigger value="standings" className="gap-2">
-              <Table className="h-4 w-4" />
+              <TableIcon className="h-4 w-4" />
               Standings
             </TabsTrigger>
           </TabsList>
@@ -555,54 +583,60 @@ const TournamentDetailPage: NextPage = () => {
               )}
 
               {matches.length > 0 && (
-                <Card>
-                  <div className="p-6">
-                    <h3 className="text-lg font-medium mb-4">Match Schedule</h3>
-                    <div className="space-y-4">
-                      {matches.map((match) => (
-                        <div
-                          key={match.id}
-                          className="flex items-center justify-between p-4 border rounded-lg dark:border-gray-800"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className="text-right font-medium">{match.home_team.name}</div>
-                            <div className="text-center">
-                              {match.status === "completed" ? (
-                                <div className="font-bold">
-                                  {match.home_score} - {match.away_score}
+                <Card className="overflow-hidden">
+                  <div className="p-6 border-b dark:border-gray-800">
+                    <h3 className="text-lg font-medium">Recent Activities</h3>
+                  </div>
+                  <div className="divide-y dark:divide-gray-800">
+                    {matches
+                      .filter(match => match.status === "completed")
+                      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                      .slice(0, 5)
+                      .map((match) => {
+                        const homePlayer = players.find(p => p.team_id === match.home_team_id);
+                        const awayPlayer = players.find(p => p.team_id === match.away_team_id);
+                        const homeTeamPoints = standings.find(s => s.team_id === match.home_team_id)?.points || 0;
+                        const awayTeamPoints = standings.find(s => s.team_id === match.away_team_id)?.points || 0;
+                        
+                        let resultText = "";
+                        if (match.home_score > match.away_score) {
+                          resultText = `${match.home_team.name} won against ${match.away_team.name}`;
+                        } else if (match.home_score < match.away_score) {
+                          resultText = `${match.home_team.name} lost against ${match.away_team.name}`;
+                        } else {
+                          resultText = `${match.home_team.name} drew with ${match.away_team.name}`;
+                        }
+
+                        return (
+                          <div key={match.id} className="p-6">
+                            <div className="space-y-4">
+                              <div className="flex items-center gap-2">
+                                <ActivityIcon className="w-4 h-4 text-green-500" />
+                                <p className="text-sm">
+                                  {resultText} ({match.home_score} - {match.away_score})
+                                </p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                  <div className="font-medium">{match.home_team.name}</div>
+                                  <div className="text-sm text-muted-foreground">{homePlayer?.name}</div>
+                                  <div className="text-sm">Current Points: {homeTeamPoints}</div>
                                 </div>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedMatch(match);
-                                    setHomeScore(match.home_score || 0);
-                                    setAwayScore(match.away_score || 0);
-                                    setIsUpdateScoreOpen(true);
-                                  }}
-                                  className="px-2 py-1"
-                                >
-                                  Update Score
-                                </Button>
-                              )}
-                              <span
-                                className={`text-xs px-2 py-1 rounded-full font-medium mt-1 inline-block ${getStatusColor(
-                                  match.status
-                                )}`}
-                              >
-                                {match.status.replace("_", " ").charAt(0).toUpperCase() +
-                                  match.status.slice(1).replace("_", " ")}
-                              </span>
+                                <div className="space-y-1">
+                                  <div className="font-medium">{match.away_team.name}</div>
+                                  <div className="text-sm text-muted-foreground">{awayPlayer?.name}</div>
+                                  <div className="text-sm">Current Points: {awayTeamPoints}</div>
+                                </div>
+                              </div>
                             </div>
-                            <div className="text-left font-medium">{match.away_team.name}</div>
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {new Date(match.match_date).toLocaleDateString()}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                        );
+                      })}
+                    {matches.filter(match => match.status === "completed").length === 0 && (
+                      <div className="p-6 text-center text-sm text-muted-foreground">
+                        No completed matches yet
+                      </div>
+                    )}
                   </div>
                 </Card>
               )}
@@ -656,82 +690,117 @@ const TournamentDetailPage: NextPage = () => {
           </TabsContent>
 
           {/* Matches Tab */}
-          <TabsContent value="matches">
-            <Card>
-              <div className="divide-y dark:divide-gray-800">
-                {matches.map((match) => (
-                  <div
+          <TabsContent value="matches" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {matches.map((match) => {
+                const homePlayer = players.find(p => p.team_id === match.home_team_id);
+                const awayPlayer = players.find(p => p.team_id === match.away_team_id);
+
+                return (
+                  <Card
                     key={match.id}
-                    className="p-4"
+                    className="hover:shadow-md transition-shadow"
                   >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="grid grid-cols-3 gap-4 items-center">
-                          <div className="text-right">{match.home_team.name}</div>
-                          <div className="text-center">
-                            <div className="font-bold">
-                              {match.status === "completed"
-                                ? `${match.home_score} - ${match.away_score}`
-                                : "vs"}
+                    <div className="p-4 space-y-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex-1 text-right space-y-1">
+                          <div className="font-medium">{match.home_team.name}</div>
+                          <div className="text-sm text-muted-foreground">{homePlayer?.name}</div>
+                        </div>
+                        <div className="font-bold px-3">VS</div>
+                        <div className="flex-1 text-left space-y-1">
+                          <div className="font-medium">{match.away_team.name}</div>
+                          <div className="text-sm text-muted-foreground">{awayPlayer?.name}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-center gap-2">
+                        {match.status === "completed" ? (
+                          <>
+                            <div className="text-2xl font-bold tabular-nums">
+                              {match.home_score} - {match.away_score}
                             </div>
                             <span
-                              className={`text-xs px-2 py-1 rounded-full font-medium mt-1 inline-block ${getStatusColor(
+                              className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(
                                 match.status
                               )}`}
                             >
                               {match.status.replace("_", " ").charAt(0).toUpperCase() +
                                 match.status.slice(1).replace("_", " ")}
                             </span>
-                          </div>
-                          <div className="text-left">{match.away_team.name}</div>
-                        </div>
-                      </div>
-                      <div className="text-sm text-muted-foreground text-center sm:text-right">
-                        {new Date(match.match_date).toLocaleDateString()}
+                          </>
+                        ) : match.status === "scheduled" ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedMatch(match);
+                              setHomeScore(match.home_score || 0);
+                              setAwayScore(match.away_score || 0);
+                              setIsUpdateScoreOpen(true);
+                            }}
+                            className="w-full"
+                          >
+                            Update Score
+                          </Button>
+                        ) : (
+                          <span
+                            className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(
+                              match.status
+                            )}`}
+                          >
+                            {match.status.replace("_", " ").charAt(0).toUpperCase() +
+                              match.status.slice(1).replace("_", " ")}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+                  </Card>
+                );
+              })}
+            </div>
           </TabsContent>
 
           {/* Standings Tab */}
           <TabsContent value="standings">
             <Card>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b dark:border-gray-800">
-                      <th className="text-left p-4">Team</th>
-                      <th className="text-center p-4">P</th>
-                      <th className="text-center p-4">W</th>
-                      <th className="text-center p-4">D</th>
-                      <th className="text-center p-4">L</th>
-                      <th className="text-center p-4">GF</th>
-                      <th className="text-center p-4">GA</th>
-                      <th className="text-center p-4">Pts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {standings.map((standing) => (
-                      <tr
-                        key={standing.team.id}
-                        className="border-b dark:border-gray-800"
-                      >
-                        <td className="p-4">{standing.team.name}</td>
-                        <td className="text-center p-4">{standing.played}</td>
-                        <td className="text-center p-4">{standing.wins}</td>
-                        <td className="text-center p-4">{standing.draws}</td>
-                        <td className="text-center p-4">{standing.losses}</td>
-                        <td className="text-center p-4">{standing.goals_for}</td>
-                        <td className="text-center p-4">{standing.goals_against}</td>
-                        <td className="text-center p-4 font-bold">{standing.points}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Pos</TableHead>
+                    <TableHead>Player</TableHead>
+                    <TableHead className="text-center">P</TableHead>
+                    <TableHead className="text-center">W</TableHead>
+                    <TableHead className="text-center">D</TableHead>
+                    <TableHead className="text-center">L</TableHead>
+                    <TableHead className="text-center">GF</TableHead>
+                    <TableHead className="text-center">GA</TableHead>
+                    <TableHead className="text-center">GD</TableHead>
+                    <TableHead className="text-center">Pts</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {standings.map((standing, index) => (
+                    <TableRow key={standing.id}>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{standing.player.name}</div>
+                          <div className="text-sm text-muted-foreground">{standing.team.name}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">{standing.played}</TableCell>
+                      <TableCell className="text-center">{standing.wins}</TableCell>
+                      <TableCell className="text-center">{standing.draws}</TableCell>
+                      <TableCell className="text-center">{standing.losses}</TableCell>
+                      <TableCell className="text-center">{standing.goals_for}</TableCell>
+                      <TableCell className="text-center">{standing.goals_against}</TableCell>
+                      <TableCell className="text-center">{standing.goal_difference}</TableCell>
+                      <TableCell className="text-center font-medium">{standing.points}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </Card>
           </TabsContent>
         </Tabs>
