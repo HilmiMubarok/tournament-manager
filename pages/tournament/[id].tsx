@@ -614,62 +614,163 @@ const TournamentDetailPage: NextPage = () => {
               )}
 
               {matches.length > 0 && (
-                <Card className="overflow-hidden">
-                  <div className="p-6 border-b dark:border-gray-800">
-                    <h3 className="text-lg font-medium">Recent Activities</h3>
-                  </div>
-                  <div className="divide-y dark:divide-gray-800">
-                    {matches
-                      .filter(match => match.status === "completed")
-                      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
-                      .slice(0, 5)
-                      .map((match) => {
-                        const homePlayer = players.find(p => p.team_id === match.home_team_id);
-                        const awayPlayer = players.find(p => p.team_id === match.away_team_id);
-                        const homeTeamPoints = standings.find(s => s.team_id === match.home_team_id)?.points || 0;
-                        const awayTeamPoints = standings.find(s => s.team_id === match.away_team_id)?.points || 0;
-                        
-                        let resultText = "";
-                        if (match.home_score > match.away_score) {
-                          resultText = `${match.home_team.name} won against ${match.away_team.name}`;
-                        } else if (match.home_score < match.away_score) {
-                          resultText = `${match.home_team.name} lost against ${match.away_team.name}`;
-                        } else {
-                          resultText = `${match.home_team.name} drew with ${match.away_team.name}`;
-                        }
+                <>
+                  {/* Tournament Insights */}
+                  {standings.length > 0 && (
+                    <Card className="mb-4">
+                      <CardHeader className="flex flex-row items-center space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Tournament Insights</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2">
+                        {(() => {
+                          // Sort standings by points in descending order
+                          const sortedStandings = [...standings].sort((a, b) => b.points - a.points);
+                          const leader = sortedStandings[0];
+                          const remainingMatches = matches.filter(m => m.status === "scheduled");
+                          
+                          const insights: string[] = [];
+                          const pointsPerWin = 3;
+                          
+                          // Calculate if leader can be overtaken
+                          let canBeOvertaken = false;
+                          const secondPlace = sortedStandings[1];
+                          
+                          if (secondPlace) {
+                            const pointsBehind = leader.points - secondPlace.points;
+                            const maxPossiblePoints = remainingMatches.filter(
+                              m => m.home_team_id === secondPlace.team_id || m.away_team_id === secondPlace.team_id
+                            ).length * pointsPerWin;
+                            
+                            canBeOvertaken = maxPossiblePoints > pointsBehind;
+                          }
 
-                        return (
-                          <div key={match.id} className="p-6">
-                            <div className="space-y-4">
-                              <div className="flex items-center gap-2">
-                                <ActivityIcon className="w-4 h-4 text-green-500" />
-                                <p className="text-sm">
-                                  {resultText} ({match.home_score} - {match.away_score})
-                                </p>
-                              </div>
-                              <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                  <div className="font-medium">{match.home_team.name}</div>
-                                  <div className="text-sm text-muted-foreground">{homePlayer?.name}</div>
-                                  <div className="text-sm">Current Points: {homeTeamPoints}</div>
+                          // Main tournament status
+                          if (remainingMatches.length === 0) {
+                            insights.push(`🏆 Tournament completed! ${leader.player.name} is the winner with ${leader.points} points!`);
+                          } else if (!canBeOvertaken && remainingMatches.length < 3) {
+                            insights.push(`🎯 ${leader.player.name} has secured the win! No other player can overtake their ${leader.points} points.`);
+                          } else if (remainingMatches.length === 1) {
+                            insights.push(`⚡️ Final match remaining! The tournament is reaching its conclusion.`);
+                          } else {
+                            insights.push(`📊 ${leader.player.name} is leading with ${leader.points} points. ${remainingMatches.length} matches remaining.`);
+                          }
+
+                          // Advancement possibilities for other players
+                          sortedStandings.forEach((standing, index) => {
+                            if (index === 0) return; // Skip the leader
+
+                            const playerRemainingMatches = remainingMatches.filter(
+                              m => m.home_team_id === standing.team_id || m.away_team_id === standing.team_id
+                            );
+
+                            if (playerRemainingMatches.length > 0) {
+                              // Calculate points needed for next rank
+                              const nextRank = sortedStandings[index - 1];
+                              const pointsNeeded = nextRank.points - standing.points;
+                              const winsNeeded = Math.ceil(pointsNeeded / pointsPerWin);
+
+                              if (winsNeeded <= playerRemainingMatches.length) {
+                                insights.push(
+                                  `💫 ${standing.player.name} needs ${winsNeeded} win${winsNeeded > 1 ? 's' : ''} from their ${playerRemainingMatches.length} remaining matches to potentially overtake ${nextRank.player.name} (${nextRank.points} pts).`
+                                );
+                              }
+                            }
+
+                            // Check for relegation risks
+                            if (index < sortedStandings.length - 1) {
+                              const nextPlayer = sortedStandings[index + 1];
+                              const pointsDiff = standing.points - nextPlayer.points;
+                              const nextPlayerRemainingMatches = remainingMatches.filter(
+                                m => m.home_team_id === nextPlayer.team_id || m.away_team_id === nextPlayer.team_id
+                              );
+
+                              if (pointsDiff <= 3 && nextPlayerRemainingMatches.length > 0) {
+                                insights.push(
+                                  `⚠️ ${standing.player.name}'s position is at risk - only ${pointsDiff} points ahead of ${nextPlayer.player.name} who has ${nextPlayerRemainingMatches.length} matches left.`
+                                );
+                              }
+                            }
+                          });
+
+                          // Show close matches between adjacent players
+                          for (let i = 0; i < sortedStandings.length - 1; i++) {
+                            const pointsDiff = sortedStandings[i].points - sortedStandings[i + 1].points;
+                            if (pointsDiff <= 2) {
+                              insights.push(
+                                `🔥 Tight race! Only ${pointsDiff} point${pointsDiff > 1 ? 's' : ''} separate ${sortedStandings[i].player.name} and ${sortedStandings[i + 1].player.name}!`
+                              );
+                            }
+                          }
+
+                          // Return formatted insights
+                          return insights.map((insight, index) => (
+                            <p key={index} className="text-sm">
+                              {insight}
+                            </p>
+                          ));
+                        })()}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Recent Activities */}
+                  <Card className="overflow-hidden">
+                    <div className="p-6 border-b dark:border-gray-800">
+                      <h3 className="text-lg font-medium">Recent Activities</h3>
+                    </div>
+                    <div className="divide-y dark:divide-gray-800">
+                      {matches
+                        .filter(match => match.status === "completed")
+                        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                        .slice(0, 5)
+                        .map((match) => {
+                          const homePlayer = players.find(p => p.team_id === match.home_team_id);
+                          const awayPlayer = players.find(p => p.team_id === match.away_team_id);
+                          const homeTeamPoints = standings.find(s => s.team_id === match.home_team_id)?.points || 0;
+                          const awayTeamPoints = standings.find(s => s.team_id === match.away_team_id)?.points || 0;
+                          
+                          let resultText = "";
+                          if (match.home_score > match.away_score) {
+                            resultText = `${match.home_team.name} won against ${match.away_team.name}`;
+                          } else if (match.home_score < match.away_score) {
+                            resultText = `${match.home_team.name} lost against ${match.away_team.name}`;
+                          } else {
+                            resultText = `${match.home_team.name} drew with ${match.away_team.name}`;
+                          }
+
+                          return (
+                            <div key={match.id} className="p-6">
+                              <div className="space-y-4">
+                                <div className="flex items-center gap-2">
+                                  <ActivityIcon className="w-4 h-4 text-green-500" />
+                                  <p className="text-sm">
+                                    {resultText} ({match.home_score} - {match.away_score})
+                                  </p>
                                 </div>
-                                <div className="space-y-1">
-                                  <div className="font-medium">{match.away_team.name}</div>
-                                  <div className="text-sm text-muted-foreground">{awayPlayer?.name}</div>
-                                  <div className="text-sm">Current Points: {awayTeamPoints}</div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="space-y-1">
+                                    <div className="font-medium">{match.home_team.name}</div>
+                                    <div className="text-sm text-muted-foreground">{homePlayer?.name}</div>
+                                    <div className="text-sm">Current Points: {homeTeamPoints}</div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="font-medium">{match.away_team.name}</div>
+                                    <div className="text-sm text-muted-foreground">{awayPlayer?.name}</div>
+                                    <div className="text-sm">Current Points: {awayTeamPoints}</div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    {matches.filter(match => match.status === "completed").length === 0 && (
-                      <div className="p-6 text-center text-sm text-muted-foreground">
-                        No completed matches yet
-                      </div>
-                    )}
-                  </div>
-                </Card>
+                          );
+                        })}
+                      {matches.filter(match => match.status === "completed").length === 0 && (
+                        <div className="p-6 text-center text-sm text-muted-foreground">
+                          No completed matches yet
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </>
               )}
             </div>
           </TabsContent>
