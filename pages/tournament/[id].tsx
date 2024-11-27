@@ -2,6 +2,9 @@ import type { NextPage } from 'next';
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { CardContent } from "@/components/ui/card";
+import { CardHeader } from "@/components/ui/card";
+import { CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +20,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table"; // Import Table components
+import { Table, TableBody, TableCell, TableHeader, TableRow, TableHead } from "@/components/ui/table";
 import { TeamRandomizer } from "@/components/tournaments/team-randomizer";
 import { Trophy, Users2, Calendar, TableIcon, ActivityIcon } from "lucide-react";
 import { useRouter } from "next/router";
@@ -516,21 +519,49 @@ const TournamentDetailPage: NextPage = () => {
           <TabsContent value="overview">
             <div className="space-y-6">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card className="p-6">
-                  <h3 className="font-medium text-muted-foreground">Players</h3>
-                  <p className="text-2xl font-bold mt-2">{players.length}</p>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Players</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {players.length}
+                    </div>
+                  </CardContent>
                 </Card>
-                <Card className="p-6">
-                  <h3 className="font-medium text-muted-foreground">Teams</h3>
-                  <p className="text-2xl font-bold mt-2">{teams.length}</p>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Teams</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {teams.length}
+                    </div>
+                  </CardContent>
                 </Card>
-                <Card className="p-6">
-                  <h3 className="font-medium text-muted-foreground">Matches</h3>
-                  <p className="text-2xl font-bold mt-2">{matches.length}</p>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Matches</CardTitle>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {matches.filter(m => m.status === "completed").length} / {matches.length}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {matches.length - matches.filter(m => m.status === "completed").length} matches remaining
+                    </p>
+                  </CardContent>
                 </Card>
-                <Card className="p-6">
-                  <h3 className="font-medium text-muted-foreground">Status</h3>
-                  <p className="text-2xl font-bold mt-2 capitalize">{tournament?.status}</p>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Status</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold capitalize">
+                      {tournament?.status}
+                    </div>
+                  </CardContent>
                 </Card>
               </div>
 
