@@ -25,17 +25,41 @@ export function TeamRandomizer({ players, teams, onRandomizeComplete }: TeamRand
     setCurrentAssignments(initialAssignments);
   }, [players]);
 
+  // Fisher-Yates shuffle algorithm
+  const shuffle = <T,>(array: T[]): T[] => {
+    const newArray = [...array];
+    for (let i = newArray.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+    }
+    return newArray;
+  };
+
+  // Create random assignments ensuring no players share the same team
+  const createRandomAssignments = () => {
+    const shuffledTeams = shuffle([...teams]);
+    const shuffledPlayers = shuffle([...players]);
+    const assignments: { player_id: string; team_id: string }[] = [];
+
+    // Assign each player to a team, cycling through teams if needed
+    shuffledPlayers.forEach((player, index) => {
+      const teamIndex = index % shuffledTeams.length;
+      assignments.push({
+        player_id: player.id,
+        team_id: shuffledTeams[teamIndex].id,
+      });
+    });
+
+    return assignments;
+  };
+
   useEffect(() => {
     if (!isRandomizing) return;
 
     const interval = setInterval(() => {
       if (iterations >= maxIterations) {
         setIsRandomizing(false);
-        // Create final balanced assignments
-        const finalAssignments = players.map((player, index) => ({
-          player_id: player.id,
-          team_id: teams[index % teams.length].id,
-        }));
+        const finalAssignments = createRandomAssignments();
         setCurrentAssignments(finalAssignments);
         onRandomizeComplete(finalAssignments);
         return;
@@ -49,7 +73,7 @@ export function TeamRandomizer({ players, teams, onRandomizeComplete }: TeamRand
 
       setCurrentAssignments(tempAssignments);
       setIterations((prev) => prev + 1);
-    }, 100); // Adjust speed of animation
+    }, 100);
 
     return () => clearInterval(interval);
   }, [isRandomizing, iterations, players, teams, onRandomizeComplete]);

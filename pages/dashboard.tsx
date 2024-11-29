@@ -4,6 +4,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Trophy, Users, Calendar, ArrowRight, PlusCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -21,6 +22,7 @@ interface Stats {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<Stats>({
     totalTeams: 0,
     totalMatches: 0,
@@ -91,7 +93,10 @@ export default function DashboardPage() {
           </h1>
           <p className="text-muted-foreground mt-1">Welcome back! Here's what's happening.</p>
         </div>
-        <Button className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/30">
+        <Button 
+          className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/30"
+          onClick={() => router.push("/dashboard/create-tournament")}
+        >
           <PlusCircle className="h-4 w-4" />
           New Tournament
         </Button>
@@ -163,7 +168,11 @@ export default function DashboardPage() {
                     <p className="text-sm text-muted-foreground">Created {new Date(tournament.created_at).toLocaleDateString()}</p>
                   </div>
                 </div>
-                <Button variant="outline" className="sm:w-auto w-full border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
+                <Button 
+                  variant="outline" 
+                  className="sm:w-auto w-full border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400"
+                  onClick={() => router.push(`/dashboard/tournament/${tournament.id}`)}
+                >
                   View Details
                 </Button>
               </div>

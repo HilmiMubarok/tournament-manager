@@ -4,7 +4,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PlusCircle, Trophy } from "lucide-react";
-import { useRouter } from "next/router";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -76,7 +76,7 @@ export default function TournamentsPage() {
           </div>
           <Button
             className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:shadow-xl hover:shadow-indigo-500/30"
-            onClick={() => router.push("/create-tournament")}
+            onClick={() => router.push("/dashboard/create-tournament")}
           >
             <PlusCircle className="h-4 w-4" />
             New Tournament
@@ -145,7 +145,7 @@ export default function TournamentsPage() {
                 </p>
                 <Button
                   className="mt-4 gap-2"
-                  onClick={() => router.push("/create-tournament")}
+                  onClick={() => router.push("/dashboard/create-tournament")}
                 >
                   <PlusCircle className="h-4 w-4" />
                   Create Tournament

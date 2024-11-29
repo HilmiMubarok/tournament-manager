@@ -35,6 +35,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface Tournament {
   id: number;
@@ -126,9 +137,6 @@ const TournamentDetailPage: NextPage = () => {
   const [isUpdateScoreOpen, setIsUpdateScoreOpen] = useState(false);
   const [homeScore, setHomeScore] = useState<number>(0);
   const [awayScore, setAwayScore] = useState<number>(0);
-  const [teamAssignments, setTeamAssignments] = useState<
-    { player_id: string; team_id: string }[]
-  >([]);
   const [isTeamsAssigned, setIsTeamsAssigned] = useState(false);
 
   useEffect(() => {
@@ -258,17 +266,23 @@ const TournamentDetailPage: NextPage = () => {
       // Load standings
       const fetchStandings = async () => {
         try {
-          // Get standings with team data and tournament players
+          // First get the current team assignments
+          const { data: currentAssignments, error: assignmentsError } = await supabase
+            .from("tournament_players")
+            .select("player_id, team_id")
+            .eq("tournament_id", id)
+            .not("team_id", "is", null);
+
+          if (assignmentsError) throw assignmentsError;
+
+          // Get standings with team data
           const { data: standingsData, error: standingsError } = await supabase
             .from("standings")
             .select(
               `
               *,
               team:teams(
-                *,
-                tournament_players!inner(
-                  player:players(*)
-                )
+                *
               )
             `
             )
@@ -277,18 +291,38 @@ const TournamentDetailPage: NextPage = () => {
 
           if (standingsError) throw standingsError;
 
+          // Get all players
+          const { data: playersData, error: playersError } = await supabase
+            .from("players")
+            .select("*");
+
+          if (playersError) throw playersError;
+
           // Transform the data to match our interface
           const transformedStandings = standingsData
-            .filter(
-              (standing) =>
-                standing.team && standing.team.tournament_players?.length > 0
-            )
-            .map((standing) => ({
-              ...standing,
-              player: standing.team.tournament_players[0].player,
-            }));
+            ?.filter((standing) => {
+              // Only include standings where the team is assigned to a player
+              return currentAssignments?.some(
+                (assignment) => assignment.team_id === standing.team_id
+              );
+            })
+            .map((standing) => {
+              // Find the player assigned to this team
+              const assignment = currentAssignments?.find(
+                (a) => a.team_id === standing.team_id
+              );
+              const player = assignment 
+                ? playersData?.find(p => p.id === assignment.player_id)
+                : null;
 
-          setStandings(transformedStandings);
+              return {
+                ...standing,
+                player: player || undefined
+              };
+            })
+            .filter((standing) => standing.player); // Only include standings with valid players
+
+          setStandings(transformedStandings || []);
         } catch (error) {
           toast.error("Error fetching standings");
           console.error(error);
@@ -322,44 +356,37 @@ const TournamentDetailPage: NextPage = () => {
   const handleRandomizeComplete = async (
     assignments: { player_id: string; team_id: string }[]
   ) => {
+    // Just update the local state, don't update database yet
+    const updatedPlayers: PlayerWithTeam[] = players.map((player) => {
+      const assignment = assignments.find((a) => a.player_id === player.id);
+      return {
+        ...player,
+        team_id: assignment?.team_id || undefined,
+        team: teams.find((team) => team.id === assignment?.team_id),
+      };
+    });
+    setPlayers(updatedPlayers);
+    setIsTeamsAssigned(true);
+  };
+
+  const startTournament = async () => {
     try {
       setIsLoading(true);
 
-      // Update tournament_players with team assignments
-      for (const assignment of assignments) {
+      // First, update all player team assignments in the database
+      for (const player of players) {
         const { error: assignmentError } = await supabase
           .from("tournament_players")
-          .update({ team_id: assignment.team_id })
+          .update({ team_id: player.team_id })
           .match({
             tournament_id: Number(id),
-            player_id: assignment.player_id,
+            player_id: player.id,
           });
 
         if (assignmentError) throw assignmentError;
       }
 
-      // Reload tournament data to get updated assignments
-      await loadTournamentData();
-
-      setTeamAssignments(assignments);
-      setIsTeamsAssigned(true);
-
-      toast.success("Teams have been randomly assigned!");
-    } catch (error) {
-      console.error("Error assigning teams:", error);
-      toast.error("Failed to assign teams. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const startTournament = async () => {
-    if (!tournament || !id || !isTeamsAssigned) return;
-
-    try {
-      setIsLoading(true);
-
-      // 1. Generate matches for league format based on players
+      // Generate matches for all teams
       const matches = [];
       const n = players.length;
 
@@ -369,12 +396,8 @@ const TournamentDetailPage: NextPage = () => {
 
           const player1 = players[i];
           const player2 = players[j];
-          const team1 = teamAssignments.find(
-            (a) => a.player_id === player1.id
-          )?.team_id;
-          const team2 = teamAssignments.find(
-            (a) => a.player_id === player2.id
-          )?.team_id;
+          const team1 = player1.team_id;
+          const team2 = player2.team_id;
 
           if (!team1 || !team2) continue;
 
@@ -497,6 +520,23 @@ const TournamentDetailPage: NextPage = () => {
     }
   };
 
+  const handleDeleteTournament = async () => {
+    try {
+      const { error } = await supabase
+        .from("tournaments")
+        .delete()
+        .eq("id", id);
+
+      if (error) throw error;
+
+      toast.success("Tournament deleted successfully");
+      router.push("/");
+    } catch (error) {
+      console.error("Error deleting tournament:", error);
+      toast.error("Failed to delete tournament");
+    }
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -530,22 +570,41 @@ const TournamentDetailPage: NextPage = () => {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        {/* Header */}
+      <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-medium bg-gradient-to-r from-indigo-500 to-purple-600 bg-clip-text text-transparent">
             {tournament.name}
           </h1>
-          <div className="flex items-center gap-2 mt-2">
+          <p className="text-muted-foreground">
             <span className="text-sm px-2 py-1 rounded-full font-medium bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
               {tournament.format.charAt(0).toUpperCase() +
                 tournament.format.slice(1)}
-            </span>
-            <span className="text-sm text-muted-foreground">
-              Dibuat {new Date(tournament.created_at).toLocaleDateString()}
-            </span>
-          </div>
+            </span>  Dibuat {new Date(tournament.created_at).toLocaleDateString()}
+          </p>
         </div>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive">Delete Tournament</Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This action cannot be undone. This will permanently delete the tournament
+                and all associated data including matches, standings, team assignments,
+                and player assignments.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeleteTournament}>
+                Delete Tournament
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+      <div className="space-y-6">
 
         {/* Tabs */}
         <Tabs defaultValue="overview" className="space-y-4">
@@ -802,70 +861,6 @@ const TournamentDetailPage: NextPage = () => {
                                     `⚠️ Mampus lu ${standing.player.name}! ${nextPlayer.player.name} di belakang cuma beda ${pointsDiff} poin! Bentar lagi nyusul nih... Siap-siap mental boom! 📱😢`
                                   );
                                 }
-                              }
-                            });
-
-                            // Persaingan ketat
-                            for (
-                              let i = 0;
-                              i < sortedStandings.length - 1;
-                              i++
-                            ) {
-                              const pointsDiff =
-                                sortedStandings[i].points -
-                                sortedStandings[i + 1].points;
-                              if (pointsDiff <= 2) {
-                                insights.push(
-                                  `🔥 Anjir sengit banget! ${sortedStandings[i].player.name} sama ${sortedStandings[i + 1].player.name} cuma beda ${pointsDiff} poin! Kalo kalah auto mental breakdown nih! 📺`
-                                );
-                              }
-                            }
-
-                            // Special cases for bottom players
-                            const lastPlace =
-                              sortedStandings[sortedStandings.length - 1];
-                            if (lastPlace && remainingMatches.length > 2) {
-                              const pointsToNextRank =
-                                sortedStandings[sortedStandings.length - 2]
-                                  .points - lastPlace.points;
-                              if (pointsToNextRank > 6) {
-                                insights.push(
-                                  `💀 WKWKWK ${lastPlace.player.name} cupu parah! Ketinggalan ${pointsToNextRank} poin... Mending main masak-masakan aja deh! 🍳`
-                                );
-                              }
-                            }
-
-                            // Additional roasts based on performance
-                            sortedStandings.forEach((standing) => {
-                              // Roast for players with 0 wins
-                              if (standing.wins === 0 && standing.played > 2) {
-                                insights.push(
-                                  `🤔 ${standing.player.name} belom menang sama sekali setelah ${standing.played} game. Cupu detected! Stick-nya beli di pasar loak ya? 🔌`
-                                );
-                              }
-
-                              // Roast for bad goal difference
-                              if (standing.goal_difference < -5) {
-                                insights.push(
-                                  `🥅 ${standing.player.name} kebobolan ${Math.abs(standing.goal_difference)} gol... Kipernya lagi main ranking mobile legend kali ya? Auto lose streak! 📱`
-                                );
-                              }
-
-                              // Roast for players who keep drawing
-                              if (
-                                standing.draws > standing.wins &&
-                                standing.played > 3
-                              ) {
-                                insights.push(
-                                  `✏️ ${standing.player.name} kok hobi banget seri... Takut kalah ya? Cupu detected! Main aman mulu kayak pemain ML hardstuck Epic! 🎨`
-                                );
-                              }
-
-                              // Extra roast for really bad performances
-                              if (standing.losses > standing.played * 0.7) {
-                                insights.push(
-                                  `🎯 ${standing.player.name} master lose streak! ${standing.losses} kalah dari ${standing.played} game. Rekor dunia nih! 🏆`
-                                );
                               }
                             });
 
